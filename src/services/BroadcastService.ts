@@ -1,4 +1,5 @@
 import { sessionManager } from "./SessionManager";
+import { ViewType } from "@mentra/sdk";
 
 interface Message {
   text: string;
@@ -17,7 +18,10 @@ class BroadcastService {
   // Go live
   start(email: string): { live: boolean } {
     if (!this.broadcasts.has(email)) {
-      this.broadcasts.set(email, { listeners: new Set(), messages: [] });
+      // Auto-add broadcaster as listener so they can see their own speech (confidence monitor)
+      const listeners = new Set<string>();
+      listeners.add(email);
+      this.broadcasts.set(email, { listeners, messages: [] });
       console.log(`📡 ${email} is LIVE`);
     }
     return { live: true };
@@ -50,9 +54,41 @@ class BroadcastService {
     for (const listenerEmail of broadcast.listeners) {
       const glassesSession = sessionManager.getUserSession(listenerEmail);
       console.log(`📡 Looking up glasses for ${listenerEmail}: ${glassesSession ? 'FOUND (' + glassesSession.userId + ')' : 'NOT FOUND'}`);
+
       if (glassesSession) {
         try {
-          glassesSession.session.layouts.showTextWall(text);
+          // Logic adapted from smart_glass_mcp/src/tools/display.ts
+          const textToSend = text.slice(0, 2000);
+          const durationMs = 3000;
+          const chunkSize = 120;
+          
+          // If short text, display directly
+          if (textToSend.length <= chunkSize) {
+            console.log(`Writing to glasses of ${listenerEmail}: "${textToSend}"`);
+            glassesSession.session.layouts.showTextWall(textToSend, { 
+              view: ViewType.MAIN, 
+              durationMs 
+            });
+          } else {
+            console.log(`Chunking text for ${listenerEmail}: ${textToSend.length} chars`);
+            // Split long text into chunks and display sequentially
+            const chunks: string[] = [];
+            for (let i = 0; i < textToSend.length; i += chunkSize) {
+              chunks.push(textToSend.slice(i, i + chunkSize));
+            }
+            
+            // Display chunks with proper delays (fire and forget)
+            (async () => {
+              for (const chunk of chunks) {
+                glassesSession.session.layouts.showTextWall(chunk, { 
+                  view: ViewType.MAIN, 
+                  durationMs 
+                });
+                await new Promise(resolve => setTimeout(resolve, durationMs));
+              }
+            })();
+          }
+
           reached++;
           console.log(`✅ Sent to ${listenerEmail}`);
         } catch (e) {

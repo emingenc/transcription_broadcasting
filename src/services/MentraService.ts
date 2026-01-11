@@ -1,4 +1,4 @@
-import { AppServer, AppSession } from "@mentra/sdk";
+import { AppServer, AppSession, ViewType } from "@mentra/sdk";
 import { config, debugLog } from "../config/env";
 import { sessionManager, GlassesSession } from "./SessionManager";
 import { broadcastService } from "./BroadcastService";
@@ -32,6 +32,7 @@ export class MentraService extends AppServer {
     // Unified webview - both broadcast and listen
     app.get("/webview", async (req: AuthenticatedRequest, res: Response) => {
       const userId = req.authUserId;
+      debugLog(`Webview loaded for userId: ${userId}`); // Debug log to check consistency
       const mode = (req.query.mode as string) || "broadcast";
       const broadcaster = req.query.broadcaster as string;
 
@@ -324,24 +325,42 @@ export class MentraService extends AppServer {
   }
 
   protected async onSession(session: AppSession, sessionId: string, userId: string): Promise<void> {
-    debugLog(`Glasses connected: ${userId}`);
+    console.log(`🔗 Glasses connected: ${userId} (Session: ${sessionId})`);
 
     const data: GlassesSession = { session, userId, transcriptions: [], events: [] };
     sessionManager.addSession(sessionId, data);
+    console.log(`📊 Session added. Total sessions: ${sessionManager.getConnectedCount()}`);
+
+    // Show welcome message on glasses
+    try {
+      console.log(`📺 Showing welcome message to ${userId}...`);
+      await session.layouts.showTextWall(`🎙️ Mentra Cast\nConnected as ${userId}`, { 
+        view: ViewType.MAIN, 
+        durationMs: 3000 
+      });
+      console.log(`✅ Welcome message sent to ${userId}`);
+    } catch (e) {
+      console.error("Failed to show welcome:", e);
+    }
 
     // Voice transcription listener - auto-broadcast if user is live
     session.events.onTranscription((t) => {
-      if (t.isFinal) {
-        debugLog(`Transcription [${userId}]:`, t.text);
-        
-        // Check if this user is broadcasting and auto-send to listeners
-        if (broadcastService.isLive(userId)) {
-          console.log(`🎤 Auto-broadcasting transcription from ${userId}: "${t.text}"`);
-          broadcastService.send(userId, t.text);
-        }
-      }
+      
+      // Store transcription
       data.transcriptions.push({ text: t.text, isFinal: t.isFinal, timestamp: new Date().toISOString() });
       if (data.transcriptions.length > 100) data.transcriptions.shift();
+
+      if (t.isFinal) {
+        // Check if this user is broadcasting and auto-send to listeners
+        const isLive = broadcastService.isLive(userId);
+        console.log(`📡 User ${userId} is live? ${isLive}`);
+
+        if (isLive) {
+          console.log(`📤 Auto-broadcasting: "${t.text}"`);
+          const result = broadcastService.send(userId, t.text);
+          console.log(`📤 Broadcast result: reached ${result.reached} glasses`);
+        }
+      }
     });
 
     // Button events
@@ -352,8 +371,8 @@ export class MentraService extends AppServer {
     });
 
     // Handle disconnect
-    session.events.onDisconnect?.(() => {
-      debugLog(`Glasses disconnected: ${userId}`);
+    session.events.onDisconnected?.(() => {
+      console.log(`🔌 Glasses disconnected: ${userId}`);
       sessionManager.removeSession(sessionId);
     });
   }
