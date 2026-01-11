@@ -29,11 +29,16 @@ class SessionManager {
     if (userEmail === "*") {
       return this.sessions.size > 0 ? [...this.sessions.values()][0] : undefined;
     }
-    // Find glasses where userId matches the MCP user
-    for (const [_, session] of this.sessions) {
+    // Find glasses where userId matches
+    for (const [sessionId, session] of this.sessions) {
       if (session.userId === userEmail) return session;
     }
     return undefined;
+  }
+
+  // Debug: list all connected users
+  listConnectedUsers(): string[] {
+    return [...this.sessions.values()].map(s => s.userId);
   }
 
   getConnectedCount(): number {
