@@ -29,90 +29,22 @@ export class MentraService extends AppServer {
   private setupWebview() {
     const app = this.getExpressApp();
 
-    // Broadcaster webview
+    // Unified webview - both broadcast and listen
     app.get("/webview", async (req: AuthenticatedRequest, res: Response) => {
       const userId = req.authUserId;
+      const mode = (req.query.mode as string) || "broadcast";
+      const broadcaster = req.query.broadcaster as string;
 
-      if (userId) {
+      if (!userId) {
         const html = `
           <!DOCTYPE html>
           <html>
             <head>
-              <title>Mentra Cast - Broadcast</title>
+              <title>Mentra Cast</title>
               <meta name="viewport" content="width=device-width, initial-scale=1">
               <style>
-                body { font-family: -apple-system, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; background: #fff; color: #000; }
-                .card { border: 1px solid #eee; border-radius: 12px; padding: 24px; margin-top: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-                .code-box { background: #f5f5f7; padding: 16px; font-family: monospace; font-size: 2em; border-radius: 8px; word-break: break-all; margin: 10px 0; text-align: center; font-weight: bold; color: #007aff; letter-spacing: 4px; }
-                h1 { font-size: 1.8em; margin-bottom: 8px; }
-                .user { color: #888; font-size: 0.9em; margin-bottom: 30px; }
-                h3 { margin-top: 0; font-size: 1.1em; }
-                p { color: #555; line-height: 1.5; }
-                .status-bar { padding: 12px 16px; border-radius: 8px; text-align: center; font-weight: 600; margin: 20px 0; }
-                .status-idle { background: #f0f0f0; color: #555; }
-                .status-live { background: #34c759; color: white; }
-                .btn { padding: 12px 24px; border: none; border-radius: 8px; font-size: 1em; cursor: pointer; transition: all 0.2s; }
-                .btn-primary { background: #007aff; color: white; }
-                .btn-primary:hover { background: #0051d5; }
-                .btn-danger { background: #ff3b30; color: white; }
-                .input-textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 1em; }
-                .listener-count { font-size: 1.4em; font-weight: bold; color: #007aff; }
-              </style>
-            </head>
-            <body>
-              <h1>🎙️ Mentra Cast</h1>
-              <div class="user">Broadcaster: ${userId}</div>
-              
-              <div class="card">
-                <div class="status-bar status-idle" id="status">● IDLE</div>
-                <button class="btn btn-primary" id="go-live-btn" style="width: 100%; padding: 16px; font-size: 1.2em;">GO LIVE</button>
-              </div>
-
-              <div class="card">
-                <h3>Listeners: <span class="listener-count" id="listener-count">0</span></h3>
-                <p id="session-code" style="text-align: center; font-family: monospace; font-size: 1.5em; color: #007aff; margin: 10px 0;">Share code: ------</p>
-              </div>
-
-              <div class="card">
-                <h3>Message</h3>
-                <textarea class="input-textarea" id="text-input" placeholder="Type your message..." rows="4" disabled></textarea>
-                <button class="btn btn-primary" id="send-btn" style="width: 100%; margin-top: 10px;" disabled>Send</button>
-              </div>
-
-              <div class="card">
-                <h3>Settings</h3>
-                <label>
-                  <input type="checkbox" id="translation-toggle" checked disabled />
-                  Enable translation for listeners
-                </label>
-              </div>
-
-              <script>
-                // Placeholder for broadcast logic
-                document.getElementById('go-live-btn').addEventListener('click', async () => {
-                  const isLive = document.getElementById('status').classList.contains('status-live');
-                  if (isLive) {
-                    await fetch('/api/broadcast/stop', { method: 'POST' });
-                  } else {
-                    await fetch('/api/broadcast/start', { method: 'POST' });
-                  }
-                  location.reload();
-                });
-              </script>
-            </body>
-          </html>
-        `;
-        res.send(html);
-      } else {
-        const html = `
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <title>Login Required</title>
-              <meta name="viewport" content="width=device-width, initial-scale=1">
-              <style>
-                body { font-family: -apple-system, sans-serif; padding: 40px 20px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; }
-                h1 { margin-bottom: 20px; }
+                body { font-family: -apple-system, sans-serif; padding: 40px 20px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; background: #f5f5f7; }
+                h1 { margin-bottom: 10px; font-size: 2em; }
                 p { color: #666; margin-bottom: 40px; }
                 .btn { display: inline-block; transition: transform 0.2s; }
                 .btn:active { transform: scale(0.95); }
@@ -120,137 +52,250 @@ export class MentraService extends AppServer {
             </head>
             <body>
               <h1>🎙️ Mentra Cast</h1>
-              <p>Sign in to start broadcasting</p>
+              <p>Real-time text to smart glasses</p>
               <a href="/mentra-auth" class="btn">
                 <img src="https://account.mentra.glass/sign-in-mentra.png" alt="Sign in with Mentra" width="240" />
               </a>
             </body>
           </html>
         `;
-        res.send(html);
+        return res.send(html);
       }
-    });
 
-    // Listener join webview
-    app.get("/join", async (req: AuthenticatedRequest, res: Response) => {
-      const userId = req.authUserId;
-      const broadcaster = req.query.broadcaster as string;
+      // Check broadcast status for this user
+      const myStatus = broadcastService.getStatus(userId);
 
-      if (userId) {
-        const html = `
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <title>Mentra Cast - Listen</title>
-              <meta name="viewport" content="width=device-width, initial-scale=1">
-              <style>
-                * { box-sizing: border-box; }
-                body { font-family: -apple-system, sans-serif; padding: 0; margin: 0; background: #f5f5f7; color: #000; height: 100vh; display: flex; flex-direction: column; }
-                .header { background: #fff; padding: 16px 20px; border-bottom: 1px solid #eee; }
-                h1 { font-size: 1.4em; margin: 0; }
-                .subtitle { color: #888; font-size: 0.85em; margin-top: 4px; }
-                .status { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; }
-                .status.live { background: #ff3b30; color: white; }
-                .status.offline { background: #8e8e93; color: white; }
-                
-                .join-form { padding: 20px; background: #fff; }
-                .input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 1em; margin-bottom: 10px; }
-                .btn { padding: 12px 24px; background: #007aff; color: white; border: none; border-radius: 8px; font-size: 1em; cursor: pointer; width: 100%; }
-                .btn:hover { background: #0051d5; }
-                .btn.leave { background: #ff3b30; }
-                
-                .chat { flex: 1; overflow-y: auto; padding: 20px; }
-                .bubble { background: #fff; padding: 12px 16px; border-radius: 16px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); max-width: 85%; }
-                .bubble .text { font-size: 1.1em; line-height: 1.4; }
-                .bubble .time { font-size: 0.75em; color: #888; margin-top: 4px; }
-                .empty { text-align: center; color: #888; padding: 40px; }
-              </style>
-            </head>
-            <body>
-              <div class="header">
-                <h1>🎙️ Mentra Cast</h1>
-                <div class="subtitle" id="broadcaster-info">
-                  ${broadcaster ? `Listening to: ${broadcaster}` : 'Enter broadcaster email to join'}
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Mentra Cast</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+              * { box-sizing: border-box; }
+              body { font-family: -apple-system, sans-serif; margin: 0; padding: 0; background: #f5f5f7; min-height: 100vh; }
+              .header { background: #fff; padding: 16px 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+              .header h1 { font-size: 1.3em; margin: 0; }
+              .user { color: #888; font-size: 0.8em; }
+              
+              .tabs { display: flex; background: #fff; border-bottom: 1px solid #eee; }
+              .tab { flex: 1; padding: 14px; text-align: center; cursor: pointer; font-weight: 500; color: #888; border-bottom: 2px solid transparent; transition: all 0.2s; }
+              .tab.active { color: #007aff; border-bottom-color: #007aff; }
+              .tab:hover { background: #f9f9f9; }
+              
+              .content { padding: 20px; max-width: 600px; margin: 0 auto; }
+              .card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+              
+              .status-bar { padding: 12px 16px; border-radius: 8px; text-align: center; font-weight: 600; }
+              .status-idle { background: #e5e5e5; color: #666; }
+              .status-live { background: #ff3b30; color: white; }
+              
+              .btn { padding: 14px 24px; border: none; border-radius: 8px; font-size: 1em; cursor: pointer; transition: all 0.2s; width: 100%; }
+              .btn-primary { background: #007aff; color: white; }
+              .btn-primary:hover { background: #0051d5; }
+              .btn-danger { background: #ff3b30; color: white; }
+              .btn-danger:hover { background: #d63029; }
+              .btn:disabled { background: #ccc; cursor: not-allowed; }
+              
+              .input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 1em; margin-bottom: 12px; }
+              textarea.input { resize: vertical; min-height: 100px; }
+              
+              .listener-count { font-size: 2em; font-weight: bold; color: #007aff; }
+              .label { font-size: 0.9em; color: #888; margin-bottom: 8px; }
+              
+              .chat { max-height: 400px; overflow-y: auto; }
+              .bubble { background: #e9e9eb; padding: 12px 16px; border-radius: 16px; margin-bottom: 8px; }
+              .bubble .text { font-size: 1em; line-height: 1.4; }
+              .bubble .time { font-size: 0.75em; color: #888; margin-top: 4px; }
+              .empty { text-align: center; color: #888; padding: 40px; }
+              
+              .hidden { display: none; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>🎙️ Mentra Cast</h1>
+              <span class="user">${userId}</span>
+            </div>
+            
+            <div class="tabs">
+              <div class="tab ${mode === 'broadcast' ? 'active' : ''}" onclick="switchMode('broadcast')">📡 Broadcast</div>
+              <div class="tab ${mode === 'listen' ? 'active' : ''}" onclick="switchMode('listen')">👂 Listen</div>
+            </div>
+
+            <!-- BROADCAST MODE -->
+            <div id="broadcast-mode" class="content ${mode !== 'broadcast' ? 'hidden' : ''}">
+              <div class="card">
+                <div class="status-bar ${myStatus.live ? 'status-live' : 'status-idle'}" id="my-status">
+                  ${myStatus.live ? '● LIVE' : '● OFFLINE'}
+                </div>
+                <div style="margin-top: 16px;">
+                  <button class="btn ${myStatus.live ? 'btn-danger' : 'btn-primary'}" id="toggle-btn" onclick="toggleBroadcast()">
+                    ${myStatus.live ? 'STOP BROADCAST' : 'GO LIVE'}
+                  </button>
                 </div>
               </div>
 
+              <div class="card" id="broadcast-controls" ${!myStatus.live ? 'style="opacity:0.5;pointer-events:none"' : ''}>
+                <div class="label">Listeners</div>
+                <div class="listener-count" id="listener-count">${myStatus.listenerCount || 0}</div>
+                <div style="margin-top: 8px; color: #888; font-size: 0.85em;">
+                  Share your email: <strong>${userId}</strong>
+                </div>
+              </div>
+
+              <div class="card" id="send-card" ${!myStatus.live ? 'style="opacity:0.5;pointer-events:none"' : ''}>
+                <div class="label">Send Message</div>
+                <textarea class="input" id="text-input" placeholder="Type your message..."></textarea>
+                <button class="btn btn-primary" id="send-btn" onclick="sendMessage()">Send to Glasses</button>
+              </div>
+            </div>
+
+            <!-- LISTEN MODE -->
+            <div id="listen-mode" class="content ${mode !== 'listen' ? 'hidden' : ''}">
               ${!broadcaster ? `
-              <div class="join-form">
+              <div class="card">
+                <div class="label">Broadcaster Email</div>
                 <input type="email" class="input" id="broadcaster-input" placeholder="broadcaster@email.com" />
-                <button class="btn" onclick="joinBroadcast()">Join Broadcast</button>
+                <button class="btn btn-primary" onclick="joinBroadcast()">Join Broadcast</button>
               </div>
               ` : `
-              <div class="join-form" style="display: flex; gap: 10px;">
-                <span class="status live" id="status">● LIVE</span>
-                <button class="btn leave" style="flex:1" onclick="leaveBroadcast()">Leave</button>
+              <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <div>
+                    <div class="label">Listening to</div>
+                    <strong>${broadcaster}</strong>
+                  </div>
+                  <div class="status-bar" id="broadcaster-status" style="padding: 6px 12px;">● LIVE</div>
+                </div>
+                <button class="btn btn-danger" style="margin-top: 16px;" onclick="leaveBroadcast()">Leave</button>
               </div>
-              <div class="chat" id="chat">
-                <div class="empty">Waiting for messages...</div>
+              
+              <div class="card">
+                <div class="label">Messages</div>
+                <div class="chat" id="chat">
+                  <div class="empty">Waiting for messages...</div>
+                </div>
               </div>
               `}
+            </div>
 
-              <script>
-                const broadcaster = "${broadcaster || ''}";
-                const userId = "${userId}";
+            <script>
+              const userId = "${userId}";
+              const currentMode = "${mode}";
+              const broadcaster = "${broadcaster || ''}";
+              let isLive = ${myStatus.live};
 
-                function joinBroadcast() {
-                  const email = document.getElementById('broadcaster-input').value;
-                  if (email) {
-                    fetch('/api/broadcast/join', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ broadcasterEmail: email })
-                    }).then(() => {
-                      location.href = '/join?broadcaster=' + encodeURIComponent(email);
-                    });
-                  }
-                }
+              function switchMode(mode) {
+                window.location.href = '/webview?mode=' + mode;
+              }
 
-                function leaveBroadcast() {
-                  fetch('/api/broadcast/leave', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ broadcasterEmail: broadcaster })
-                  }).then(() => {
-                    location.href = '/join';
-                  });
-                }
+              async function toggleBroadcast() {
+                const endpoint = isLive ? '/api/broadcast/stop' : '/api/broadcast/start';
+                await fetch(endpoint, { method: 'POST' });
+                location.reload();
+              }
 
-                ${broadcaster ? `
+              async function sendMessage() {
+                const text = document.getElementById('text-input').value.trim();
+                if (!text) return;
+                
+                await fetch('/api/broadcast/send', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ text })
+                });
+                
+                document.getElementById('text-input').value = '';
+              }
+
+              function joinBroadcast() {
+                const email = document.getElementById('broadcaster-input').value.trim();
+                if (!email) return;
+                
+                fetch('/api/broadcast/join', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ broadcasterEmail: email })
+                }).then(() => {
+                  location.href = '/webview?mode=listen&broadcaster=' + encodeURIComponent(email);
+                });
+              }
+
+              function leaveBroadcast() {
+                fetch('/api/broadcast/leave', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ broadcasterEmail: broadcaster })
+                }).then(() => {
+                  location.href = '/webview?mode=listen';
+                });
+              }
+
+              // Polling for listen mode
+              if (currentMode === 'listen' && broadcaster) {
                 let lastCount = 0;
                 async function pollMessages() {
                   try {
                     const res = await fetch('/api/broadcast/messages?broadcaster=' + encodeURIComponent(broadcaster));
                     const data = await res.json();
                     
-                    if (!data.live) {
-                      document.getElementById('status').className = 'status offline';
-                      document.getElementById('status').textContent = '● OFFLINE';
+                    const statusEl = document.getElementById('broadcaster-status');
+                    if (data.live) {
+                      statusEl.className = 'status-bar status-live';
+                      statusEl.textContent = '● LIVE';
+                      statusEl.style.background = '#ff3b30';
+                      statusEl.style.color = 'white';
+                    } else {
+                      statusEl.className = 'status-bar status-idle';
+                      statusEl.textContent = '● OFFLINE';
+                      statusEl.style.background = '#e5e5e5';
+                      statusEl.style.color = '#666';
                     }
                     
-                    if (data.messages && data.messages.length > lastCount) {
+                    if (data.messages && data.messages.length !== lastCount) {
                       const chat = document.getElementById('chat');
-                      chat.innerHTML = data.messages.map(m => \`
-                        <div class="bubble">
-                          <div class="text">\${m.text}</div>
-                          <div class="time">\${new Date(m.time).toLocaleTimeString()}</div>
-                        </div>
-                      \`).join('');
-                      chat.scrollTop = chat.scrollHeight;
+                      if (data.messages.length === 0) {
+                        chat.innerHTML = '<div class="empty">Waiting for messages...</div>';
+                      } else {
+                        chat.innerHTML = data.messages.map(m => 
+                          '<div class="bubble"><div class="text">' + m.text + '</div><div class="time">' + new Date(m.time).toLocaleTimeString() + '</div></div>'
+                        ).join('');
+                        chat.scrollTop = chat.scrollHeight;
+                      }
                       lastCount = data.messages.length;
                     }
                   } catch (e) {}
                 }
                 pollMessages();
                 setInterval(pollMessages, 1000);
-                ` : ''}
-              </script>
-            </body>
-          </html>
-        `;
-        res.send(html);
+              }
+
+              // Polling for broadcast mode (listener count)
+              if (currentMode === 'broadcast' && isLive) {
+                async function pollStatus() {
+                  try {
+                    const res = await fetch('/api/broadcast/status');
+                    const data = await res.json();
+                    document.getElementById('listener-count').textContent = data.listenerCount || 0;
+                  } catch (e) {}
+                }
+                setInterval(pollStatus, 2000);
+              }
+            </script>
+          </body>
+        </html>
+      `;
+      res.send(html);
+    });
+
+    // Redirect /join to unified webview
+    app.get("/join", (req: Request, res: Response) => {
+      const broadcaster = req.query.broadcaster;
+      if (broadcaster) {
+        res.redirect('/webview?mode=listen&broadcaster=' + encodeURIComponent(broadcaster as string));
       } else {
-        res.redirect('/mentra-auth');
+        res.redirect('/webview?mode=listen');
       }
     });
   }
