@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: mentra-cast
+    env: docker
+    plan: free
+    branch: main
+    dockerfilePath: docker/Dockerfile
+    dockerContext: .
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: PACKAGE_NAME
+        sync: false
+      - key: MENTRAOS_API_KEY
+        sync: false
