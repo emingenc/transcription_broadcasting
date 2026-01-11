@@ -38,9 +38,9 @@ export function createBroadcastRoutes(): Router {
 
   // Join (listener joins broadcaster by email)
   router.post("/join", (req: AuthRequest, res: Response) => {
-    const { broadcasterEmail, glassesSessionId } = req.body;
+    const { broadcasterEmail } = req.body;
     if (!broadcasterEmail) return res.status(400).json({ error: "broadcasterEmail required" });
-    res.json(broadcastService.join(req.authUserId!, broadcasterEmail, glassesSessionId || "default"));
+    res.json(broadcastService.join(req.authUserId!, broadcasterEmail));
   });
 
   // Leave

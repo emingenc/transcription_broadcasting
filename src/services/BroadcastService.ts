@@ -6,7 +6,7 @@ interface Message {
 }
 
 interface Broadcast {
-  listeners: Map<string, string>; // listenerEmail -> glassesSessionId
+  listeners: Set<string>; // listenerEmails
   messages: Message[]; // Recent messages for webview
 }
 
@@ -17,7 +17,7 @@ class BroadcastService {
   // Go live
   start(email: string): { live: boolean } {
     if (!this.broadcasts.has(email)) {
-      this.broadcasts.set(email, { listeners: new Map(), messages: [] });
+      this.broadcasts.set(email, { listeners: new Set(), messages: [] });
       console.log(`📡 ${email} is LIVE`);
     }
     return { live: true };
@@ -30,7 +30,7 @@ class BroadcastService {
     return { stopped: true };
   }
 
-  // Send text to all listeners
+  // Send text to all listeners' glasses
   send(email: string, text: string): { sent: boolean; reached: number } {
     const broadcast = this.broadcasts.get(email);
     if (!broadcast) return { sent: false, reached: 0 };
@@ -39,34 +39,34 @@ class BroadcastService {
     broadcast.messages.push({ text, time: new Date() });
     if (broadcast.messages.length > 50) broadcast.messages.shift(); // Keep last 50
 
+    // Send to each listener's glasses (looked up by their email)
     let reached = 0;
-    for (const [, glassesSessionId] of broadcast.listeners) {
-      const session = sessionManager.getSession(glassesSessionId);
-      if (session) {
+    for (const listenerEmail of broadcast.listeners) {
+      const glassesSession = sessionManager.getUserSession(listenerEmail);
+      if (glassesSession) {
         try {
-          session.session.layouts.showTextWall(text);
+          glassesSession.session.layouts.showTextWall(text);
           reached++;
         } catch (e) {
-          console.error(e);
+          console.error(`Failed to send to ${listenerEmail}:`, e);
         }
       }
     }
 
-    console.log(`📤 "${text.slice(0, 30)}..." → ${reached}`);
+    console.log(`📤 "${text.slice(0, 30)}..." → ${reached} glasses`);
     return { sent: true, reached };
   }
 
   // Join broadcaster by email
   join(
     listenerEmail: string,
-    broadcasterEmail: string,
-    glassesSessionId: string
+    broadcasterEmail: string
   ): { joined: boolean; error?: string } {
     const broadcast = this.broadcasts.get(broadcasterEmail);
     if (!broadcast) return { joined: false, error: "Not live" };
 
-    broadcast.listeners.set(listenerEmail, glassesSessionId);
-    console.log(`👂 ${listenerEmail} → ${broadcasterEmail}`);
+    broadcast.listeners.add(listenerEmail);
+    console.log(`👂 ${listenerEmail} joined ${broadcasterEmail}`);
     return { joined: true };
   }
 
@@ -78,11 +78,11 @@ class BroadcastService {
   }
 
   // Status
-  getStatus(email: string): { live: boolean; listeners: number } {
+  getStatus(email: string): { live: boolean; listenerCount: number } {
     const broadcast = this.broadcasts.get(email);
     return {
       live: !!broadcast,
-      listeners: broadcast?.listeners.size || 0,
+      listenerCount: broadcast?.listeners.size || 0,
     };
   }
 
