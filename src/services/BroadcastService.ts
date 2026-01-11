@@ -31,7 +31,7 @@ class BroadcastService {
   }
 
   // Send text to all listeners' glasses
-  send(email: string, text: string): { sent: boolean; reached: number } {
+  send(email: string, text: string): { sent: boolean; reached: number; debug?: any } {
     const broadcast = this.broadcasts.get(email);
     if (!broadcast) return { sent: false, reached: 0 };
 
@@ -39,14 +39,22 @@ class BroadcastService {
     broadcast.messages.push({ text, time: new Date() });
     if (broadcast.messages.length > 50) broadcast.messages.shift(); // Keep last 50
 
+    // Debug: log listeners and connected glasses
+    const listeners = Array.from(broadcast.listeners);
+    const connectedCount = sessionManager.getConnectedCount();
+    console.log(`📡 Listeners: ${JSON.stringify(listeners)}`);
+    console.log(`📡 Connected glasses sessions: ${connectedCount}`);
+
     // Send to each listener's glasses (looked up by their email)
     let reached = 0;
     for (const listenerEmail of broadcast.listeners) {
       const glassesSession = sessionManager.getUserSession(listenerEmail);
+      console.log(`📡 Looking up glasses for ${listenerEmail}: ${glassesSession ? 'FOUND (' + glassesSession.userId + ')' : 'NOT FOUND'}`);
       if (glassesSession) {
         try {
           glassesSession.session.layouts.showTextWall(text);
           reached++;
+          console.log(`✅ Sent to ${listenerEmail}`);
         } catch (e) {
           console.error(`Failed to send to ${listenerEmail}:`, e);
         }
@@ -54,7 +62,7 @@ class BroadcastService {
     }
 
     console.log(`📤 "${text.slice(0, 30)}..." → ${reached} glasses`);
-    return { sent: true, reached };
+    return { sent: true, reached, debug: { listeners, connectedCount } };
   }
 
   // Join broadcaster by email
