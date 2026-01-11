@@ -329,9 +329,17 @@ export class MentraService extends AppServer {
     const data: GlassesSession = { session, userId, transcriptions: [], events: [] };
     sessionManager.addSession(sessionId, data);
 
-    // Voice transcription listener
+    // Voice transcription listener - auto-broadcast if user is live
     session.events.onTranscription((t) => {
-      if (t.isFinal) debugLog(`Transcription [${userId}]:`, t.text);
+      if (t.isFinal) {
+        debugLog(`Transcription [${userId}]:`, t.text);
+        
+        // Check if this user is broadcasting and auto-send to listeners
+        if (broadcastService.isLive(userId)) {
+          console.log(`🎤 Auto-broadcasting transcription from ${userId}: "${t.text}"`);
+          broadcastService.send(userId, t.text);
+        }
+      }
       data.transcriptions.push({ text: t.text, isFinal: t.isFinal, timestamp: new Date().toISOString() });
       if (data.transcriptions.length > 100) data.transcriptions.shift();
     });
