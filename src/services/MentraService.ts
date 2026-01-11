@@ -183,11 +183,30 @@ export class MentraService extends AppServer {
             <script>
               const userId = "${userId}";
               const currentMode = "${mode}";
-              const broadcaster = "${broadcaster || ''}";
+              let broadcaster = "${broadcaster || ''}";
               let isLive = ${myStatus.live};
 
+              // Restore broadcaster from localStorage if not in URL
+              if (currentMode === 'listen' && !broadcaster) {
+                const saved = localStorage.getItem('mentra_cast_broadcaster');
+                if (saved) {
+                  broadcaster = saved;
+                  // Redirect with broadcaster in URL
+                  location.href = '/webview?mode=listen&broadcaster=' + encodeURIComponent(saved);
+                }
+              }
+              // Save broadcaster to localStorage when listening
+              if (currentMode === 'listen' && broadcaster) {
+                localStorage.setItem('mentra_cast_broadcaster', broadcaster);
+              }
+
               function switchMode(mode) {
-                window.location.href = '/webview?mode=' + mode;
+                // Preserve broadcaster when switching tabs
+                let url = '/webview?mode=' + mode;
+                if (mode === 'listen' && broadcaster) {
+                  url += '&broadcaster=' + encodeURIComponent(broadcaster);
+                }
+                window.location.href = url;
               }
 
               async function toggleBroadcast() {
@@ -213,6 +232,8 @@ export class MentraService extends AppServer {
                 const email = document.getElementById('broadcaster-input').value.trim();
                 if (!email) return;
                 
+                localStorage.setItem('mentra_cast_broadcaster', email);
+                
                 fetch('/api/broadcast/join', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -223,6 +244,8 @@ export class MentraService extends AppServer {
               }
 
               function leaveBroadcast() {
+                localStorage.removeItem('mentra_cast_broadcaster');
+                
                 fetch('/api/broadcast/leave', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
